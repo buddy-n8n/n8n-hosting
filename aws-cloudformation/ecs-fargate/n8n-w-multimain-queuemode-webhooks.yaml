@@ -50,7 +50,14 @@ Parameters:
 # postgres parameters
   DBInstanceClass:
     Type: String
-    Description: "Select instance class for n8n's PostgresDB"
+    Description: >-
+      PostgreSQL instance class. Sizing guidance (the DB becomes the bottleneck before the
+      worker/webhook tiers as request rate rises): db.t4g.micro/small/medium are BURSTABLE
+      (CPU-credit limited) and fine for dev / light / bursty load but throttle under sustained
+      load. For sustained throughput pick a non-burstable class, db.m7g.large for ~250 req/s,
+      db.m7g.xlarge/2xlarge for higher rps or heavier workflows. Past a single instance's
+      ceiling (~hundreds of req/s) the path is Aurora PostgreSQL I/O-Optimized + PgBouncer,
+      which is beyond this template.
     Default: db.t4g.small
     AllowedValues: 
       - db.t4g.micro
