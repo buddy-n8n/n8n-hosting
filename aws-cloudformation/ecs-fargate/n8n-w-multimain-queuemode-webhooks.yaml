@@ -135,6 +135,23 @@ Parameters:
     MinValue: 1
     Description: "Jobs each worker processes in parallel (n8n N8N_CONCURRENCY)."
 
+# webhook autoscaling parameters (request-rate driven, tuneable)
+  WebhookMinTasks:
+    Type: Number
+    Default: 4
+    MinValue: 1
+    Description: "Minimum webhook tasks (floor). Defaulted to 4 so the ingestion tier absorbs bursts during the ~3-5 min scale-out lag instead of throttling on cold start."
+  WebhookMaxTasks:
+    Type: Number
+    Default: 10
+    MinValue: 1
+    Description: "Maximum webhook tasks the autoscaler may scale to."
+  WebhookRequestsPerTask:
+    Type: Number
+    Default: 1000
+    MinValue: 1
+    Description: "Scale target: average ALB requests per webhook task (ALBRequestCountPerTarget). Lower = more aggressive / lower latency, higher = cheaper."
+
 # labels to make everything easier to read during setup
 Metadata:
   AWS::CloudFormation::Interface:
@@ -177,6 +194,12 @@ Metadata:
           - WorkerMaxTasks
           - WorkerBacklogPerTask
           - WorkerConcurrency
+      - Label:
+          default: "Webhook Autoscaling Config"
+        Parameters:
+          - WebhookMinTasks
+          - WebhookMaxTasks
+          - WebhookRequestsPerTask
 
 Resources:
 
@@ -1696,7 +1719,7 @@ Resources:
             TargetGroupArn: !Ref WebhookTargetGroup
             ContainerName: "n8n"
             ContainerPort: 5678
-        DesiredCount: 2
+        DesiredCount: !Ref WebhookMinTasks
         TaskDefinition: !Ref N8nWebhookTaskDefinition
         DeploymentConfiguration:
             MaximumPercent: 200
@@ -1731,8 +1754,8 @@ Resources:
       ResourceId: !Sub
         - "service/${ClusterName}/${ServiceName}"
         - { ClusterName: !Ref ECSCluster, ServiceName: !GetAtt ECSWebhookService.Name }
-      MinCapacity: 2
-      MaxCapacity: 10
+      MinCapacity: !Ref WebhookMinTasks
+      MaxCapacity: !Ref WebhookMaxTasks
       RoleARN: !Sub "arn:aws:iam::${AWS::AccountId}:role/aws-service-role/ecs.application-autoscaling.amazonaws.com/AWSServiceRoleForApplicationAutoScaling_ECSService"
 
   ECSWebhookCPUScalingPolicy:
@@ -1760,6 +1783,22 @@ Resources:
         TargetValue: 70
         ScaleInCooldown: 60
         ScaleOutCooldown: 60
+
+  # PRIMARY webhook policy: scale on ALB request rate per task (more responsive than CPU
+  # for an ingestion tier; avoids the CPU-feedback lag seen when webhook is the bottleneck).
+  ECSWebhookRequestScalingPolicy:
+    Type: AWS::ApplicationAutoScaling::ScalingPolicy
+    Properties:
+      PolicyName: !Sub "${AWS::StackName}-wh-req-tt"
+      PolicyType: TargetTrackingScaling
+      ScalingTargetId: !Ref ECSWebhookScalableTarget
+      TargetTrackingScalingPolicyConfiguration:
+        PredefinedMetricSpecification:
+          PredefinedMetricType: ALBRequestCountPerTarget
+          ResourceLabel: !Sub "${ElasticLoadBalancingV2LoadBalancer.LoadBalancerFullName}/${WebhookTargetGroup.TargetGroupFullName}"
+        TargetValue: !Ref WebhookRequestsPerTask
+        ScaleInCooldown: 120
+        ScaleOutCooldown: 30
 
 # output useful information to make things easier to read.
 Outputs:
