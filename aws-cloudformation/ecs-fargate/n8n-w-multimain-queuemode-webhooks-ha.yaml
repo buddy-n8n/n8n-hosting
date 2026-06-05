@@ -179,6 +179,21 @@ Parameters:
     MinValue: -1
     Description: "Max concurrent production executions (-1 to disable). EKS Large = 2000 (the default 100 throttles workers before infrastructure does). Maps to N8N_CONCURRENCY_PRODUCTION_LIMIT."
 
+# task runner parameters
+  EnablePythonTaskRunner:
+    Type: String
+    Default: "false"
+    AllowedValues: [ "true", "false" ]
+    Description: "BETA. true = run an external n8nio/runners sidecar (JavaScript + native Python) on the main and worker tasks for Python Code node support, matching the EKS module. false (default) = JS-only internal runner, no sidecar, no extra cost. Validate with a test deploy before relying on it."
+  PythonStdlibAllow:
+    Type: String
+    Default: ""
+    Description: "Only used when EnablePythonTaskRunner=true. Python stdlib modules the runner may import (maps to N8N_RUNNERS_STDLIB_ALLOW). Comma-separated (e.g. json,math,datetime) or * for all. Empty (default) = no imports allowed (most secure; matches n8n default)."
+  PythonExternalAllow:
+    Type: String
+    Default: ""
+    Description: "Only used when EnablePythonTaskRunner=true. External (pip) packages the runner may import (maps to N8N_RUNNERS_EXTERNAL_ALLOW). Comma-separated or * for all. Empty (default) = none."
+
 # labels to make everything easier to read during setup
 Metadata:
   AWS::CloudFormation::Interface:
@@ -236,10 +251,18 @@ Metadata:
           - ExecutionsDataMaxAge
           - ExecutionsDataMaxCount
           - ConcurrencyProductionLimit
+      - Label:
+          default: "Task Runner Config"
+        Parameters:
+          - EnablePythonTaskRunner
+          - PythonStdlibAllow
+          - PythonExternalAllow
 
 Conditions:
   # >=1 replica enables Multi-AZ + automatic failover
   RedisHA: !Not [ !Equals [ !Ref RedisReplicasPerNodeGroup, 0 ] ]
+  # opt-in external task runner sidecar (JS + native Python)
+  PythonRunner: !Equals [ !Ref EnablePythonTaskRunner, "true" ]
 
 Resources:
 
@@ -1075,9 +1098,10 @@ Resources:
       ExecutionRoleArn: !GetAtt N8nTaskExecutionRole.Arn
       Volumes:
         - Name: certs
+        - Name: runner-cfg
       ContainerDefinitions:
         - Name: n8n
-          Image: n8nio/n8n:latest
+          Image: n8nio/n8n:2.23.4
           Essential: true
           StopTimeout: 120
           PortMappings:
@@ -1174,6 +1198,11 @@ Resources:
               Value: 60
             - Name: N8N_CONCURRENCY_PRODUCTION_LIMIT
               Value: !Ref ConcurrencyProductionLimit
+            # task runner: external when the Python sidecar is enabled, else internal (JS in-process)
+            - Name: N8N_RUNNERS_MODE
+              Value: !If [ PythonRunner, external, internal ]
+            - Name: N8N_RUNNERS_AUTH_TOKEN
+              Value: !Join [ "-", [ "runner", !Select [ 2, !Split [ "/", !Ref "AWS::StackId" ] ] ] ]
             - Name: QUEUE_HEALTH_CHECK_ACTIVE
               Value: true
             - Name: QUEUE_BULL_REDIS_TLS
@@ -1227,6 +1256,60 @@ Resources:
           MountPoints:
             - SourceVolume: certs
               ContainerPath: /certs
+        # JS + native Python task runner (external mode); present only when EnablePythonTaskRunner=true.
+        # The stock n8nio/runners image hardcodes the Python import allowlist empty (env-overrides), so a
+        # root init container patches that config onto a shared volume from the PythonStdlibAllow /
+        # PythonExternalAllow params, and the runner reads it via N8N_RUNNERS_CONFIG_PATH. BETA.
+        - !If
+          - PythonRunner
+          - Name: runner-config-init
+            Image: n8nio/runners:2.23.4
+            Essential: false
+            User: "0"
+            EntryPoint: [ "/opt/runners/task-runner-python/.venv/bin/python", "-c" ]
+            Command:
+              - "import json,os;c=json.load(open('/etc/n8n-task-runners.json'));[r.setdefault('env-overrides',{}).update({'N8N_RUNNERS_STDLIB_ALLOW':os.environ.get('STDLIB_ALLOW',''),'N8N_RUNNERS_EXTERNAL_ALLOW':os.environ.get('EXTERNAL_ALLOW','')}) for r in c['task-runners'] if r.get('runner-type')=='python'];json.dump(c,open('/runner-cfg/n8n-task-runners.json','w'));print('runner config patched: stdlib=%r external=%r'%(os.environ.get('STDLIB_ALLOW',''),os.environ.get('EXTERNAL_ALLOW','')))"
+            Environment:
+              - Name: STDLIB_ALLOW
+                Value: !Ref PythonStdlibAllow
+              - Name: EXTERNAL_ALLOW
+                Value: !Ref PythonExternalAllow
+            MountPoints:
+              - SourceVolume: runner-cfg
+                ContainerPath: /runner-cfg
+            LogConfiguration:
+              LogDriver: awslogs
+              Options:
+                awslogs-group: !Sub /ecs/${AWS::StackName}
+                awslogs-region: !Sub ${AWS::Region}
+                awslogs-stream-prefix: ecs
+          - !Ref "AWS::NoValue"
+        - !If
+          - PythonRunner
+          - Name: task-runner
+            Image: n8nio/runners:2.23.4
+            Essential: false
+            Command: [ "javascript", "python" ]
+            DependsOn:
+              - ContainerName: runner-config-init
+                Condition: SUCCESS
+            Environment:
+              - Name: N8N_RUNNERS_TASK_BROKER_URI
+                Value: http://127.0.0.1:5679
+              - Name: N8N_RUNNERS_AUTH_TOKEN
+                Value: !Join [ "-", [ "runner", !Select [ 2, !Split [ "/", !Ref "AWS::StackId" ] ] ] ]
+              - Name: N8N_RUNNERS_CONFIG_PATH
+                Value: /runner-cfg/n8n-task-runners.json
+            MountPoints:
+              - SourceVolume: runner-cfg
+                ContainerPath: /runner-cfg
+            LogConfiguration:
+              LogDriver: awslogs
+              Options:
+                awslogs-group: !Sub /ecs/${AWS::StackName}
+                awslogs-region: !Sub ${AWS::Region}
+                awslogs-stream-prefix: ecs
+          - !Ref "AWS::NoValue"
 
   # Fargate Service for main
   ECSMainService:
@@ -1292,9 +1375,10 @@ Resources:
       ExecutionRoleArn: !GetAtt N8nTaskExecutionRole.Arn
       Volumes:
         - Name: certs
+        - Name: runner-cfg
       ContainerDefinitions:
         - Name: n8n
-          Image: n8nio/n8n:latest
+          Image: n8nio/n8n:2.23.4
           Essential: true
           StopTimeout: 120
           PortMappings:
@@ -1379,6 +1463,11 @@ Resources:
               Value: queue
             - Name: N8N_CONCURRENCY
               Value: !Ref WorkerConcurrency
+            # task runner: external when the Python sidecar is enabled, else internal (JS in-process)
+            - Name: N8N_RUNNERS_MODE
+              Value: !If [ PythonRunner, external, internal ]
+            - Name: N8N_RUNNERS_AUTH_TOKEN
+              Value: !Join [ "-", [ "runner", !Select [ 2, !Split [ "/", !Ref "AWS::StackId" ] ] ] ]
             - Name: N8N_LOG_LEVEL
               Value: warn
             - Name: N8N_MULTI_MAIN_SETUP_ENABLED
@@ -1435,6 +1524,60 @@ Resources:
           MountPoints:
             - SourceVolume: certs
               ContainerPath: /certs
+        # JS + native Python task runner (external mode); present only when EnablePythonTaskRunner=true.
+        # The stock n8nio/runners image hardcodes the Python import allowlist empty (env-overrides), so a
+        # root init container patches that config onto a shared volume from the PythonStdlibAllow /
+        # PythonExternalAllow params, and the runner reads it via N8N_RUNNERS_CONFIG_PATH. BETA.
+        - !If
+          - PythonRunner
+          - Name: runner-config-init
+            Image: n8nio/runners:2.23.4
+            Essential: false
+            User: "0"
+            EntryPoint: [ "/opt/runners/task-runner-python/.venv/bin/python", "-c" ]
+            Command:
+              - "import json,os;c=json.load(open('/etc/n8n-task-runners.json'));[r.setdefault('env-overrides',{}).update({'N8N_RUNNERS_STDLIB_ALLOW':os.environ.get('STDLIB_ALLOW',''),'N8N_RUNNERS_EXTERNAL_ALLOW':os.environ.get('EXTERNAL_ALLOW','')}) for r in c['task-runners'] if r.get('runner-type')=='python'];json.dump(c,open('/runner-cfg/n8n-task-runners.json','w'));print('runner config patched: stdlib=%r external=%r'%(os.environ.get('STDLIB_ALLOW',''),os.environ.get('EXTERNAL_ALLOW','')))"
+            Environment:
+              - Name: STDLIB_ALLOW
+                Value: !Ref PythonStdlibAllow
+              - Name: EXTERNAL_ALLOW
+                Value: !Ref PythonExternalAllow
+            MountPoints:
+              - SourceVolume: runner-cfg
+                ContainerPath: /runner-cfg
+            LogConfiguration:
+              LogDriver: awslogs
+              Options:
+                awslogs-group: !Sub /ecs/${AWS::StackName}
+                awslogs-region: !Sub ${AWS::Region}
+                awslogs-stream-prefix: ecs
+          - !Ref "AWS::NoValue"
+        - !If
+          - PythonRunner
+          - Name: task-runner
+            Image: n8nio/runners:2.23.4
+            Essential: false
+            Command: [ "javascript", "python" ]
+            DependsOn:
+              - ContainerName: runner-config-init
+                Condition: SUCCESS
+            Environment:
+              - Name: N8N_RUNNERS_TASK_BROKER_URI
+                Value: http://127.0.0.1:5679
+              - Name: N8N_RUNNERS_AUTH_TOKEN
+                Value: !Join [ "-", [ "runner", !Select [ 2, !Split [ "/", !Ref "AWS::StackId" ] ] ] ]
+              - Name: N8N_RUNNERS_CONFIG_PATH
+                Value: /runner-cfg/n8n-task-runners.json
+            MountPoints:
+              - SourceVolume: runner-cfg
+                ContainerPath: /runner-cfg
+            LogConfiguration:
+              LogDriver: awslogs
+              Options:
+                awslogs-group: !Sub /ecs/${AWS::StackName}
+                awslogs-region: !Sub ${AWS::Region}
+                awslogs-stream-prefix: ecs
+          - !Ref "AWS::NoValue"
 
   # Fargate Service for workers
   ECSWorkerService:
@@ -1700,9 +1843,10 @@ Resources:
       ExecutionRoleArn: !GetAtt N8nTaskExecutionRole.Arn
       Volumes:
         - Name: certs
+        - Name: runner-cfg
       ContainerDefinitions:
         - Name: n8n
-          Image: n8nio/n8n:latest
+          Image: n8nio/n8n:2.23.4
           Essential: true
           StopTimeout: 120
           EntryPoint:
