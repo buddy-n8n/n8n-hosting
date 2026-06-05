@@ -106,6 +106,12 @@ Parameters:
     Description: "Password for the Redis user 'default'. Must be 16 characters at least. IMPORTANT NOTE! Please change this from the default for optimal security."
     AllowedPattern: ".{16}.*"
     Default: "Myverysecureredispassword1!"
+  RedisReplicasPerNodeGroup:
+    Type: Number
+    Default: 1
+    MinValue: 0
+    MaxValue: 5
+    Description: "Redis read replicas per shard. >=1 enables Multi-AZ + automatic failover (HA, recommended for prod). Set 0 for a single-node dev cache (SPOF, cheaper)."
 
 # license key parameters
   N8nLicenseKey:
@@ -207,6 +213,14 @@ Metadata:
           - WebhookMinTasks
           - WebhookMaxTasks
           - WebhookRequestsPerTask
+      - Label:
+          default: "Redis HA Config"
+        Parameters:
+          - RedisReplicasPerNodeGroup
+
+Conditions:
+  # >=1 replica enables Multi-AZ + automatic failover
+  RedisHA: !Not [ !Equals [ !Ref RedisReplicasPerNodeGroup, 0 ] ]
 
 Resources:
 
@@ -807,13 +821,13 @@ Resources:
     Type: AWS::ElastiCache::ReplicationGroup
     Properties:
       ReplicationGroupId: !Sub ${AWS::StackName}-redis
-      ReplicationGroupDescription: Minimal single-node Redis
+      ReplicationGroupDescription: n8n Redis (queue + cache)
       Engine: redis
       CacheNodeType: !Ref RedisInstanceClass
       NumNodeGroups: 1
-      ReplicasPerNodeGroup: 0  # single primary, no replicas
-      MultiAZEnabled: false
-      AutomaticFailoverEnabled: false
+      ReplicasPerNodeGroup: !Ref RedisReplicasPerNodeGroup
+      MultiAZEnabled: !If [ RedisHA, true, false ]
+      AutomaticFailoverEnabled: !If [ RedisHA, true, false ]
       CacheSubnetGroupName: !Ref CacheSubnetGroup
       SecurityGroupIds: [ !Ref CacheSecurityGroup ]
       CacheParameterGroupName: !Ref RedisParamGroup
