@@ -542,11 +542,14 @@ Resources:
       HealthCheckTimeoutSeconds: 30
       HealthyThresholdCount: 8
       UnhealthyThresholdCount: 5
-      HealthCheckPath: /
+      # readiness (DB + Redis), not shallow liveness, so the ALB only routes to fully-ready tasks
+      HealthCheckPath: /healthz/readiness
       Matcher:
-        HttpCode: '200-399'
+        HttpCode: '200'
       TargetGroupAttributes:
         - Key: deregistration_delay.timeout_seconds
+          Value: "30"
+        - Key: slow_start.duration_seconds
           Value: "30"
 
   # target group for the dedicated webhook service (webhook process serves /healthz, not /)
@@ -567,11 +570,14 @@ Resources:
       HealthCheckTimeoutSeconds: 10
       HealthyThresholdCount: 3
       UnhealthyThresholdCount: 5
-      HealthCheckPath: /healthz
+      # readiness (DB + Redis) gates traffic, fixes the new-task 503s during rolling deploys
+      HealthCheckPath: /healthz/readiness
       Matcher:
         HttpCode: '200'
       TargetGroupAttributes:
         - Key: deregistration_delay.timeout_seconds
+          Value: "30"
+        - Key: slow_start.duration_seconds
           Value: "30"
 
   # Listeners
