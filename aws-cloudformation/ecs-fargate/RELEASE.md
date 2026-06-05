@@ -1,7 +1,13 @@
-# n8n on AWS ECS Fargate, ecs-fargate-0.1.0 (BETA)
+# n8n on AWS ECS Fargate, ecs-fargate-0.1.1 (BETA)
 
-> **BETA / SA sign-off.** Initial release, validated on real AWS but not yet GA. The `0.x` version signals
+> **BETA / SA sign-off.** Beta release, validated on real AWS but not yet GA. The `0.x` version signals
 > early/unstable: defaults and parameters may change. Read the "Beta caveats" below before production use.
+
+## What's new in 0.1.1
+
+- Clarified that a valid **n8n Enterprise license is required**: multi-main and S3 external storage are
+  Enterprise-licensed features, so the stack will not start without a real `N8nLicenseKey`. No template
+  changes from 0.1.0.
 
 CloudFormation templates to run n8n in **queue mode with multi-main** on ECS Fargate (VPC, ALB, RDS/Aurora
 PostgreSQL, ElastiCache Redis, S3 binary storage, Secrets Manager, autoscaling). A tier ladder, start
@@ -22,6 +28,9 @@ version; they must match), RDS cert-fetcher = `amazonlinux:2023`, worker-scaler 
 
 ## Key parameters (tuneable; sensible defaults)
 
+- **License (required):** `N8nLicenseKey` must be a **valid n8n Enterprise license**. These templates use
+  Enterprise-licensed features (multi-main and S3 external storage); the placeholder default will not work
+  and the stack will fail to start without a real key.
 - **Worker autoscaling:** `WorkerMinTasks` / `WorkerMaxTasks` / `WorkerBacklogPerTask` / `WorkerConcurrency`
   (queue-depth based, the webhooks/HA templates).
 - **Webhook autoscaling:** `WebhookMinTasks` / `WebhookMaxTasks` / `WebhookRequestsPerTask`.
@@ -33,8 +42,9 @@ version; they must match), RDS cert-fetcher = `amazonlinux:2023`, worker-scaler 
 
 ## Deploy outline
 
-Prerequisites: a Route53 hosted zone you control and an ACM certificate **in the same region as the stack**
-for your chosen hostname.
+Prerequisites: a Route53 hosted zone you control, an ACM certificate **in the same region as the stack**
+for your chosen hostname, and a **valid n8n Enterprise license** (multi-main and S3 external storage are
+Enterprise-licensed features, so the stack will fail to start without a real `N8nLicenseKey`).
 
 ```bash
 # templates are > 51,200 bytes, so stage in S3 and deploy by URL
