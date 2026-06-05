@@ -188,6 +188,14 @@ Parameters:
     Default: "false"
     AllowedValues: [ "true", "false" ]
     Description: "BETA. true = run an external n8nio/runners sidecar (JavaScript + native Python) on the main and worker tasks for Python Code node support, matching the EKS module. false (default) = JS-only internal runner, no sidecar, no extra cost. Validate with a test deploy before relying on it."
+  PythonStdlibAllow:
+    Type: String
+    Default: ""
+    Description: "Only used when EnablePythonTaskRunner=true. Python stdlib modules the runner may import (maps to N8N_RUNNERS_STDLIB_ALLOW). Comma-separated (e.g. json,math,datetime) or * for all. Empty (default) = no imports allowed (most secure; matches n8n default)."
+  PythonExternalAllow:
+    Type: String
+    Default: ""
+    Description: "Only used when EnablePythonTaskRunner=true. External (pip) packages the runner may import (maps to N8N_RUNNERS_EXTERNAL_ALLOW). Comma-separated or * for all. Empty (default) = none."
 
 # labels to make everything easier to read during setup
 Metadata:
@@ -251,6 +259,8 @@ Metadata:
           default: "Task Runner Config"
         Parameters:
           - EnablePythonTaskRunner
+          - PythonStdlibAllow
+          - PythonExternalAllow
 
 Conditions:
   # >=1 replica enables Multi-AZ + automatic failover
@@ -1234,6 +1244,10 @@ Resources:
                 Value: http://127.0.0.1:5679
               - Name: N8N_RUNNERS_AUTH_TOKEN
                 Value: !Join [ "-", [ "runner", !Select [ 2, !Split [ "/", !Ref "AWS::StackId" ] ] ] ]
+              - Name: N8N_RUNNERS_STDLIB_ALLOW
+                Value: !Ref PythonStdlibAllow
+              - Name: N8N_RUNNERS_EXTERNAL_ALLOW
+                Value: !Ref PythonExternalAllow
             LogConfiguration:
               LogDriver: awslogs
               Options:
@@ -1467,6 +1481,10 @@ Resources:
                 Value: http://127.0.0.1:5679
               - Name: N8N_RUNNERS_AUTH_TOKEN
                 Value: !Join [ "-", [ "runner", !Select [ 2, !Split [ "/", !Ref "AWS::StackId" ] ] ] ]
+              - Name: N8N_RUNNERS_STDLIB_ALLOW
+                Value: !Ref PythonStdlibAllow
+              - Name: N8N_RUNNERS_EXTERNAL_ALLOW
+                Value: !Ref PythonExternalAllow
             LogConfiguration:
               LogDriver: awslogs
               Options:
