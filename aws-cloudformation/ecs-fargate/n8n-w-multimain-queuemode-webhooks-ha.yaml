@@ -162,6 +162,23 @@ Parameters:
     MinValue: 1
     Description: "Scale target: average ALB requests per webhook task (ALBRequestCountPerTarget). Lower = more aggressive / lower latency, higher = cheaper."
 
+# execution-data retention (pruning) parameters, matched to the EKS module's Large tier
+  ExecutionsDataMaxAge:
+    Type: Number
+    Default: 24
+    MinValue: 1
+    Description: "Max age (hours) of execution records to retain before pruning. EKS Large = 24 (1 day). Maps to EXECUTIONS_DATA_MAX_AGE."
+  ExecutionsDataMaxCount:
+    Type: Number
+    Default: 5000000
+    MinValue: 0
+    Description: "Max number of execution records to retain (0 = no count limit). EKS Large = 5000000. Maps to EXECUTIONS_DATA_PRUNE_MAX_COUNT."
+  ConcurrencyProductionLimit:
+    Type: Number
+    Default: 2000
+    MinValue: -1
+    Description: "Max concurrent production executions (-1 to disable). EKS Large = 2000 (the default 100 throttles workers before infrastructure does). Maps to N8N_CONCURRENCY_PRODUCTION_LIMIT."
+
 # labels to make everything easier to read during setup
 Metadata:
   AWS::CloudFormation::Interface:
@@ -213,6 +230,12 @@ Metadata:
           default: "Redis HA Config"
         Parameters:
           - RedisReplicasPerNodeGroup
+      - Label:
+          default: "Data Retention Config"
+        Parameters:
+          - ExecutionsDataMaxAge
+          - ExecutionsDataMaxCount
+          - ConcurrencyProductionLimit
 
 Conditions:
   # >=1 replica enables Multi-AZ + automatic failover
@@ -1136,6 +1159,21 @@ Resources:
             # production webhooks are served by the dedicated webhook service, not the mains
             - Name: N8N_DISABLE_PRODUCTION_MAIN_PROCESS
               Value: true
+            # execution-data pruning (matched to the EKS module); runs on the leader main in queue mode
+            - Name: EXECUTIONS_DATA_PRUNE
+              Value: true
+            - Name: EXECUTIONS_DATA_MAX_AGE
+              Value: !Ref ExecutionsDataMaxAge
+            - Name: EXECUTIONS_DATA_PRUNE_MAX_COUNT
+              Value: !Ref ExecutionsDataMaxCount
+            - Name: EXECUTIONS_DATA_HARD_DELETE_BUFFER
+              Value: 1
+            - Name: EXECUTIONS_DATA_PRUNE_HARD_DELETE_INTERVAL
+              Value: 15
+            - Name: EXECUTIONS_DATA_PRUNE_SOFT_DELETE_INTERVAL
+              Value: 60
+            - Name: N8N_CONCURRENCY_PRODUCTION_LIMIT
+              Value: !Ref ConcurrencyProductionLimit
             - Name: QUEUE_HEALTH_CHECK_ACTIVE
               Value: true
             - Name: QUEUE_BULL_REDIS_TLS
