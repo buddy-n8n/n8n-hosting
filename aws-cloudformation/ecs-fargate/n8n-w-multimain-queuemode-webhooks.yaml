@@ -531,6 +531,9 @@ Resources:
       HealthCheckPath: /
       Matcher:
         HttpCode: '200-399'
+      TargetGroupAttributes:
+        - Key: deregistration_delay.timeout_seconds
+          Value: "30"
 
   # target group for the dedicated webhook service (webhook process serves /healthz, not /)
   WebhookTargetGroup:
@@ -553,6 +556,9 @@ Resources:
       HealthCheckPath: /healthz
       Matcher:
         HttpCode: '200'
+      TargetGroupAttributes:
+        - Key: deregistration_delay.timeout_seconds
+          Value: "30"
 
   # Listeners
   ElasticLoadBalancingV2Listener2:
@@ -1006,6 +1012,7 @@ Resources:
         - Name: n8n
           Image: n8nio/n8n:latest
           Essential: true
+          StopTimeout: 120
           PortMappings:
             - ContainerPort: 5678
               HostPort: 5678
@@ -1067,6 +1074,9 @@ Resources:
               Value: 10000
             - Name: DB_POSTGRESDB_IDLE_CONNECTION_TIMEOUT
               Value: 10000
+            # finish in-flight executions on SIGTERM before exit (scale-in / deploy / task stop)
+            - Name: N8N_GRACEFUL_SHUTDOWN_TIMEOUT
+              Value: 90
             - Name: N8N_EXTERNAL_STORAGE_S3_HOST
               Value: !Sub "s3.${AWS::Region}.amazonaws.com"
             - Name: N8N_EXTERNAL_STORAGE_S3_BUCKET_NAME
@@ -1204,6 +1214,7 @@ Resources:
         - Name: n8n
           Image: n8nio/n8n:latest
           Essential: true
+          StopTimeout: 120
           PortMappings:
             - ContainerPort: 5678
               HostPort: 5678
@@ -1273,6 +1284,9 @@ Resources:
               Value: 10000
             - Name: DB_POSTGRESDB_IDLE_CONNECTION_TIMEOUT
               Value: 10000
+            # finish in-flight executions on SIGTERM before exit (scale-in / deploy / task stop)
+            - Name: N8N_GRACEFUL_SHUTDOWN_TIMEOUT
+              Value: 90
             - Name: N8N_EXTERNAL_STORAGE_S3_HOST
               Value: !Sub "s3.${AWS::Region}.amazonaws.com"
             - Name: N8N_EXTERNAL_STORAGE_S3_BUCKET_NAME
@@ -1608,6 +1622,7 @@ Resources:
         - Name: n8n
           Image: n8nio/n8n:latest
           Essential: true
+          StopTimeout: 120
           EntryPoint:
             - "node"
             - "/usr/local/bin/n8n"
@@ -1673,6 +1688,9 @@ Resources:
               Value: 10000
             - Name: DB_POSTGRESDB_IDLE_CONNECTION_TIMEOUT
               Value: 10000
+            # finish in-flight executions on SIGTERM before exit (scale-in / deploy / task stop)
+            - Name: N8N_GRACEFUL_SHUTDOWN_TIMEOUT
+              Value: 90
             - Name: N8N_EXTERNAL_STORAGE_S3_HOST
               Value: !Sub "s3.${AWS::Region}.amazonaws.com"
             - Name: N8N_EXTERNAL_STORAGE_S3_BUCKET_NAME
