@@ -26,7 +26,7 @@ DEPRECATED=(
 SCENARIOS=(
   "webhook-url|--set webhook.url=https://hooks.example.com"
   "ingress|--set ingress.enabled=true"
-  "s3|--set s3.enabled=true --set s3.storage.mode=s3 --set s3.bucket.name=b --set s3.bucket.region=us-east-1 --set s3.auth.accessKeyId=A --set s3.auth.secretAccessKey=S"
+  "s3|--set s3.enabled=true --set s3.storage.mode=s3 --set s3.bucket.name=b --set s3.bucket.region=us-east-1 --set s3.auth.accessKeyId=A --set s3.auth.secretAccessKeySecret.name=s3-creds --set s3.auth.secretAccessKeySecret.key=secretKey"
   "queue-all-tiers|--set webhook.url=https://hooks.example.com --set redis.enabled=true --set worker.enabled=true --set webhookProcessor.enabled=true"
 )
 
@@ -43,8 +43,13 @@ for scenario in "${SCENARIOS[@]}"; do
   fi
 
   for var in "${DEPRECATED[@]}"; do
-    # Word-boundary match, so N8N_WEBHOOK_URL does not match WEBHOOK_URL.
-    if echo "$out" | grep -qE "(^|[^A-Z0-9_])${var}([^A-Z0-9_]|$)"; then
+    # Match only the positions where the chart can emit an env var name: an
+    # env entry ("name: VAR"), a configMapKeyRef ("key: VAR"), or a ConfigMap
+    # data key ("VAR:" at the start of a line). Values never match, so a URL
+    # containing the deprecated name cannot false-positive, and N8N_WEBHOOK_URL
+    # does not match WEBHOOK_URL. Here-string, not a pipe: with pipefail, grep
+    # -q exiting early can SIGPIPE the writer and turn a hit into a miss.
+    if grep -qE "((name|key): ${var}$)|(^[[:space:]]*${var}:)" <<< "$out"; then
       echo "FAIL [$name] chart renders deprecated env var: $var"
       rc=1
     fi
