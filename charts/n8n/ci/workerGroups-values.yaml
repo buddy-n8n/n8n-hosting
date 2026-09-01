@@ -1,0 +1,34 @@
+# CI overlay: merged with examples/minimal.yaml in .github/workflows/ci.yml
+# to ensure queueMode.workerGroups renders on every PR.
+#
+# Covers both shapes: a KEDA-scaled group pinned to a worker pool, and a group
+# with KEDA disabled that keeps a static replicaCount.
+keda:
+  enabled: true
+
+queueMode:
+  enabled: true
+  workerGroups:
+    - name: ci-pooled
+      poolName: ci-pooled
+      concurrency: 5
+      resources:
+        requests:
+          cpu: 100m
+          memory: 256Mi
+      keda:
+        minReplicaCount: 1
+        maxReplicaCount: 3
+        jobsPerReplica: 5
+    - name: ci-static
+      replicaCount: 1
+      extraEnv:
+        - name: N8N_LOG_LEVEL
+          value: debug
+      keda:
+        enabled: false
+
+config:
+  extraEnv:
+    - name: N8N_WORKER_POOLS_ENABLED
+      value: "true"

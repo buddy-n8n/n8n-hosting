@@ -44,6 +44,53 @@ queueMode:
   #     value: "10"
   workerExtraEnv: []
 
+  # Additional worker deployments, each with its own replica count,
+  # concurrency, resources, env and node placement. The pods are otherwise
+  # identical to the workers above: they share this release's ConfigMap and
+  # Secrets, so they cannot drift on connection, identity, storage or licence
+  # configuration.
+  #
+  # Set `poolName` to pin a group to an n8n worker pool. Its pods then consume
+  # the `jobs-<poolName>` queue instead of the default `jobs` queue, and only
+  # executions from projects assigned to that pool run on them. Worker pools
+  # additionally require the feature to be switched on for the whole instance,
+  # which the mains need too:
+  #
+  #   config:
+  #     extraEnv:
+  #       - name: N8N_WORKER_POOLS_ENABLED
+  #         value: "true"
+  #
+  # Pool names must be 1-63 characters of lowercase letters, digits and
+  # hyphens, starting with a letter or digit. n8n only logs a warning for an
+  # invalid name and then starts the worker on the default queue, so a typo
+  # produces a Ready pod serving the wrong jobs.
+  #
+  # When keda.enabled is true each group also gets its own ScaledObject
+  # watching that group's queue, because the default worker's triggers only
+  # watch `<prefix>:jobs:*` and cannot see a pool's backlog.
+  #
+  # Example:
+  # workerGroups:
+  #   - name: gpu
+  #     poolName: gpu
+  #     concurrency: 5
+  #     resources:
+  #       requests: { cpu: "1", memory: 2Gi }
+  #       limits: { cpu: "2", memory: 4Gi }
+  #     nodeSelector:
+  #       node.kubernetes.io/instance-type: g5.xlarge
+  #     keda:
+  #       minReplicaCount: 1
+  #       maxReplicaCount: 6
+  #       jobsPerReplica: 5
+  #   - name: secteam
+  #     poolName: secteam
+  #     replicaCount: 2      # used only when keda is disabled for the group
+  #     keda:
+  #       enabled: false
+  workerGroups: []
+
 # ----- Webhook processors (optional scaling layer) -----
 webhookProcessor:
   # Enable dedicated webhook processing pods for high-throughput webhook scenarios

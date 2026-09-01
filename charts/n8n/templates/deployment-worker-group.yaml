@@ -1,0 +1,56 @@
+{{- /*
+One Deployment per queueMode.workerGroups entry.
+
+A group is an additional worker deployment with its own replica count,
+concurrency, resources and node placement. Setting `poolName` on a group also
+sets N8N_WORKER_POOL_NAME on its pods, which moves them off the default `jobs`
+queue and onto `jobs-<poolName>` so a project pinned to that pool runs only
+here.
+
+The pod itself comes from the same template as the chart's default worker
+deployment, so a group cannot drift from it on connection, identity, storage or
+licence configuration.
+*/ -}}
+{{- if .Values.queueMode.enabled }}
+{{- range $group := .Values.queueMode.workerGroups }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "n8n.fullname" $ }}-worker-{{ $group.name }}
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    {{- include "n8n.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: worker
+    n8n.io/worker-group: {{ $group.name }}
+    {{- with $group.poolName }}
+    n8n.io/worker-pool: {{ . }}
+    {{- end }}
+  {{- with $.Values.commonAnnotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- /* KEDA owns the replica count once a scaler exists for this group, so the
+         chart must not reset it on every upgrade. hasKey rather than
+         `default true`: sprig's default treats false as empty, so
+         `default true false` is true and a per-group opt-out would be ignored. */}}
+  {{- $keda := $group.keda | default dict }}
+  {{- $kedaEnabled := $.Values.keda.enabled }}
+  {{- if and $kedaEnabled (hasKey $keda "enabled") }}
+  {{- $kedaEnabled = $keda.enabled }}
+  {{- end }}
+  {{- if not $kedaEnabled }}
+  replicas: {{ $group.replicaCount | default 1 }}
+  {{- end }}
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "n8n.name" $ }}
+      app.kubernetes.io/instance: {{ $.Release.Name }}
+      app.kubernetes.io/component: worker
+      n8n.io/worker-group: {{ $group.name }}
+  template:
+    {{- include "n8n.workerPodTemplate" (dict "root" $ "group" $group) | nindent 4 }}
+{{- end }}
+{{- end }}

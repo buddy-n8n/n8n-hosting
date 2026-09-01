@@ -1,0 +1,98 @@
+# Worker Groups and Worker Pools
+# This example runs extra worker deployments alongside the default one, each
+# sized for its own kind of work, and pins two of them to n8n worker pools.
+#
+# A worker group is just another worker deployment with its own replicas,
+# concurrency, resources and node placement. Give it a poolName and its pods
+# consume the jobs-<poolName> queue instead of the default jobs queue, so only
+# executions from projects assigned to that pool run there. Assign a project to
+# a pool in the n8n UI under Project, Settings, Worker Pools.
+#
+# Prerequisites:
+#   - External PostgreSQL and Redis (queue mode)
+#   - KEDA installed in the cluster, for the per-group scalers:
+#       helm install keda kedacore/keda --namespace keda-system --create-namespace
+#   - An n8n version that supports worker pools, and a licence with the
+#     entitlement that gates them
+#
+# Pool names are 1-63 characters of lowercase letters, digits and hyphens,
+# starting with a letter or digit. The values schema enforces this because n8n
+# itself only logs a warning for a bad name and then starts the worker on the
+# default queue, which leaves a Ready pod quietly serving the wrong jobs.
+
+database:
+  type: postgresdb
+  useExternal: true
+  host: "your-postgres-host.com"
+  port: 5432
+  database: n8n
+  schema: "public"
+  passwordSecret:
+    name: "n8n-db-secret"
+    key: "password"
+
+redis:
+  host: "your-redis-host.com"
+  port: 6379
+
+secretRefs:
+  existingSecret: "n8n-core-secrets"
+
+config:
+  extraEnv:
+    # Required instance-wide, not just on the workers: the main pods resolve a
+    # project's pool and enqueue to it.
+    - name: N8N_WORKER_POOLS_ENABLED
+      value: "true"
+
+hpa:
+  worker:
+    enabled: false
+
+keda:
+  enabled: true
+
+queueMode:
+  enabled: true
+
+  # The default, unlabelled workers. These keep serving the jobs queue for
+  # every project that is not pinned to a pool.
+  workerReplicaCount: 2
+  workerConcurrency: 10
+
+  workerGroups:
+    # Long-running or memory-hungry executions, pinned to bigger nodes.
+    - name: gpu
+      poolName: gpu
+      concurrency: 5
+      resources:
+        requests:
+          cpu: "1"
+          memory: 2Gi
+        limits:
+          cpu: "2"
+          memory: 4Gi
+      nodeSelector:
+        node.kubernetes.io/instance-type: g5.xlarge
+      keda:
+        minReplicaCount: 1
+        maxReplicaCount: 6
+        jobsPerReplica: 5
+
+    # An isolated set for one team's projects. Scales to zero when idle; a
+    # project pinned to a pool with no live workers falls back to the default
+    # queue rather than waiting.
+    - name: secteam
+      poolName: secteam
+      keda:
+        minReplicaCount: 0
+        maxReplicaCount: 3
+
+    # A group with no poolName consumes the default jobs queue like any other
+    # worker, just with its own sizing. Useful for a fixed block of capacity
+    # you do not want autoscaled.
+    - name: batch
+      replicaCount: 2
+      concurrency: 20
+      keda:
+        enabled: false

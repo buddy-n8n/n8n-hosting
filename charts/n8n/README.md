@@ -104,6 +104,46 @@ For queue-based scaling, enable `keda.enabled=true` and configure Redis triggers
 
 Webhook processors are an optional scaling layer for high-volume production webhook traffic. Enable them when webhook load should be isolated from the UI/API main pods, and configure ingress or load-balancer routing as described above.
 
+### Worker groups and worker pools
+
+`queueMode.workerGroups` adds worker deployments beyond the one above, each with its own replica count, concurrency, resources, environment and node placement. Their pods share this release's ConfigMap and Secrets, so they cannot drift from the default workers on connection, identity, storage or licence configuration.
+
+Use a group when some executions need different hardware or isolation: GPU nodes, a larger memory limit, or a team whose jobs should not share workers with everything else.
+
+Setting `poolName` on a group pins it to an n8n **worker pool**. Its pods then consume the `jobs-<poolName>` queue instead of the default `jobs` queue, and only executions from projects assigned to that pool run there. Assign a project to a pool in the n8n UI under Project, Settings, Worker Pools.
+
+```yaml
+config:
+  extraEnv:
+    # Worker pools must be enabled for the whole instance: the main pods
+    # resolve a project's pool and enqueue to it.
+    - name: N8N_WORKER_POOLS_ENABLED
+      value: "true"
+
+keda:
+  enabled: true
+
+queueMode:
+  workerGroups:
+    - name: gpu
+      poolName: gpu
+      concurrency: 5
+      nodeSelector:
+        node.kubernetes.io/instance-type: g5.xlarge
+      keda:
+        minReplicaCount: 1
+        maxReplicaCount: 6
+```
+
+When `keda.enabled` is true each group gets its own `ScaledObject` watching that group's queue, because the default worker's triggers only watch `<prefix>:jobs:*` and cannot see a pool's backlog. Set `keda.enabled: false` on a group to keep a fixed `replicaCount` instead.
+
+Two things to know about pool names:
+
+- They must be 1 to 63 characters of lowercase letters, digits and hyphens, starting with a letter or digit. The chart's values schema rejects anything else, because n8n itself only logs a warning for an invalid name and then starts the worker on the default queue, which leaves a Ready pod quietly serving the wrong jobs.
+- A project whose pool has no running workers falls back to the default queue rather than waiting.
+
+> **Note:** worker pools require an n8n version that supports them, and the feature is gated on a licence entitlement. A group without `poolName` is still useful on its own: it consumes the default queue like any other worker, just with its own sizing.
+
 ## ServiceAccount
 
 By default the chart creates a ServiceAccount named `n8n`. To use an externally-managed ServiceAccount (e.g. one created by Terraform for IRSA), set `serviceAccount.create: false` **and** change `serviceAccount.name` to the name of the existing SA:
@@ -124,6 +164,7 @@ To use the namespace's default ServiceAccount, set `name: ""`. If you set `creat
 | `image.tag` | n8n version | `1.110.1` |
 | `queueMode.workerReplicaCount` | Number of worker pods | `2` |
 | `queueMode.workerConcurrency` | Jobs per worker | `10` |
+| `queueMode.workerGroups` | Additional worker deployments, optionally pinned to worker pools | `[]` |
 | `multiMain.enabled` | Multi-main HA (Enterprise) | `false` |
 | `webhookProcessor.enabled` | Dedicated webhook pods | `false` |
 | `taskRunners.enabled` | Task runner sidecars | `false` |

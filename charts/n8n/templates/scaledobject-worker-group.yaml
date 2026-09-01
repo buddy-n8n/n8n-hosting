@@ -1,0 +1,89 @@
+{{- /*
+One ScaledObject per worker group.
+
+The chart's own worker ScaledObject watches the default queue's keys
+(bull:jobs:wait / :active). A group pinned to a pool consumes jobs-<poolName>
+instead, which those triggers cannot see, so without a scaler of its own a
+pooled group would sit at a fixed replica count no matter how deep its queue
+got.
+
+Triggers default to the same two-list shape the chart uses for the default
+worker, pointed at this group's queue. A group can replace them wholesale with
+its own `keda.triggers` when it needs to scale on something else.
+*/ -}}
+{{- if and .Values.keda.enabled .Values.queueMode.enabled }}
+{{- range $group := .Values.queueMode.workerGroups }}
+{{- $keda := $group.keda | default dict }}
+{{- /* hasKey rather than `default true`: sprig's default treats false as empty,
+       so `default true false` is true and an opt-out would be ignored. */}}
+{{- $kedaEnabled := true }}
+{{- if hasKey $keda "enabled" }}
+{{- $kedaEnabled = $keda.enabled }}
+{{- end }}
+{{- if $kedaEnabled }}
+{{- $queue := include "n8n.workerGroupQueueName" $group }}
+{{- $prefix := $.Values.redis.prefix | default "bull" }}
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: {{ include "n8n.fullname" $ }}-worker-{{ $group.name }}
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    {{- include "n8n.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: worker
+    n8n.io/worker-group: {{ $group.name }}
+    {{- with $group.poolName }}
+    n8n.io/worker-pool: {{ . }}
+    {{- end }}
+  {{- with $.Values.commonAnnotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  scaleTargetRef:
+    name: {{ include "n8n.fullname" $ }}-worker-{{ $group.name }}
+  pollingInterval: {{ $keda.pollingInterval | default $.Values.keda.worker.pollingInterval }}
+  cooldownPeriod: {{ $keda.cooldownPeriod | default $.Values.keda.worker.cooldownPeriod }}
+  minReplicaCount: {{ $keda.minReplicaCount | default 1 }}
+  maxReplicaCount: {{ $keda.maxReplicaCount | default 5 }}
+  triggers:
+    {{- if $keda.triggers }}
+    {{- range $keda.triggers }}
+    - type: {{ .type }}
+      metadata:
+        {{- $address := .metadata.address }}
+        {{- if and (eq .type "redis") (eq (default "" $address) "") }}
+        address: "{{ $.Values.redis.host }}:{{ $.Values.redis.port }}"
+        {{- else }}
+        address: {{ $address | quote }}
+        {{- end }}
+        {{- range $key, $value := .metadata }}
+        {{- if ne $key "address" }}
+        {{ $key }}: {{ $value | quote }}
+        {{- end }}
+        {{- end }}
+      {{- if and .authenticationRef .authenticationRef.name }}
+      authenticationRef:
+        name: {{ .authenticationRef.name }}
+      {{- end }}
+    {{- end }}
+    {{- else }}
+    {{- range $queueState := list "wait" "active" }}
+    - type: redis
+      metadata:
+        address: "{{ $.Values.redis.host }}:{{ $.Values.redis.port }}"
+        listName: "{{ $prefix }}:{{ $queue }}:{{ $queueState }}"
+        listLength: {{ $keda.jobsPerReplica | default 5 | quote }}
+        {{- with $keda.triggerMetadata }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with $keda.authenticationRef }}
+      authenticationRef:
+        name: {{ . }}
+      {{- end }}
+    {{- end }}
+    {{- end }}
+{{- end }}
+{{- end }}
+{{- end }}
