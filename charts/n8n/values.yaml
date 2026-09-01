@@ -66,16 +66,15 @@ queueMode:
   # invalid name and then starts the worker on the default queue, so a typo
   # produces a Ready pod serving the wrong jobs.
   #
-  # When keda.enabled is true each group also gets its own ScaledObject
-  # watching that group's queue, because the default worker's triggers only
-  # watch `<prefix>:jobs:*` and cannot see a pool's backlog.
+  # When keda.enabled is true a group with a `poolName` also gets its own
+  # ScaledObject watching that group's queue, because the default worker's
+  # triggers only watch `<prefix>:jobs:*` and cannot see a pool's backlog.
   #
-  # A group with no `poolName` stays on the default `jobs` queue. If you also
-  # leave KEDA on for it, its scaler and the default worker's scaler both read
-  # the same backlog and each scales to cover all of it, so the queue gets
-  # roughly twice the workers you asked for. Either give the group a
-  # `poolName`, or set `keda.enabled: false` on it and pick a fixed
-  # `replicaCount`.
+  # A group with no `poolName` stays on the default `jobs` queue, which the
+  # chart's own worker scaler already watches. A second scaler on that same
+  # backlog would scale to cover the same jobs twice, so the chart does not
+  # generate one: a poolless group holds the static `replicaCount` below.
+  # Set `keda.triggers` on the group to scale it on something else instead.
   #
   # Example:
   # workerGroups:

@@ -135,9 +135,9 @@ queueMode:
         maxReplicaCount: 6
 ```
 
-When `keda.enabled` is true each group gets its own `ScaledObject` watching that group's queue, because the default worker's triggers only watch `<prefix>:jobs:*` and cannot see a pool's backlog. Set `keda.enabled: false` on a group to keep a fixed `replicaCount` instead.
+When `keda.enabled` is true a group with a `poolName` gets its own `ScaledObject` watching that group's queue, because the default worker's triggers only watch `<prefix>:jobs:*` and cannot see a pool's backlog. Set `keda.enabled: false` on a group to keep a fixed `replicaCount` instead.
 
-A group with no `poolName` stays on the default `jobs` queue. Leaving KEDA on for such a group means its scaler and the default worker's scaler read the same backlog and each scales to cover all of it, so the queue ends up with roughly twice the workers you asked for. Either give the group a `poolName`, or turn KEDA off for it and pick a fixed `replicaCount`.
+A group with no `poolName` stays on the default `jobs` queue, which the chart's own worker `ScaledObject` already watches. A second scaler on that backlog would scale to cover the same jobs twice, so the chart does not generate one: a poolless group keeps its static `replicaCount` and the default worker's scaler absorbs the queue. If you want such a group autoscaled on something else, give it explicit `keda.triggers` and the chart will use those verbatim.
 
 Two things to know about pool names:
 

@@ -43,15 +43,9 @@ metadata:
   {{- end }}
 spec:
   {{- /* KEDA owns the replica count once a scaler exists for this group, so the
-         chart must not reset it on every upgrade. hasKey rather than
-         `default true`: sprig's default treats false as empty, so
-         `default true false` is true and a per-group opt-out would be ignored. */}}
-  {{- $keda := $group.keda | default dict }}
-  {{- $kedaEnabled := $.Values.keda.enabled }}
-  {{- if and $kedaEnabled (hasKey $keda "enabled") }}
-  {{- $kedaEnabled = $keda.enabled }}
-  {{- end }}
-  {{- if not $kedaEnabled }}
+         chart must not reset it on every upgrade. Same helper the ScaledObject
+         uses, so the two cannot disagree and leave a group with neither. */}}
+  {{- if not (include "n8n.workerGroupScaled" (dict "root" $ "group" $group)) }}
   {{- /* hasKey again: replicaCount 0 is a legal way to park a static group. */}}
   replicas: {{ if hasKey $group "replicaCount" }}{{ $group.replicaCount }}{{ else }}1{{ end }}
   {{- end }}

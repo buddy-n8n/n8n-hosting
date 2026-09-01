@@ -89,10 +89,10 @@ queueMode:
         maxReplicaCount: 3
 
     # A group with no poolName consumes the default jobs queue like any other
-    # worker, just with its own sizing. Useful for a fixed block of capacity
-    # you do not want autoscaled.
+    # worker, just with its own sizing. The default worker's ScaledObject
+    # already watches that queue, so the chart does not build a second scaler
+    # for this group: it holds replicaCount. Useful for a fixed block of
+    # capacity underneath the autoscaled default workers.
     - name: batch
       replicaCount: 2
       concurrency: 20
-      keda:
-        enabled: false

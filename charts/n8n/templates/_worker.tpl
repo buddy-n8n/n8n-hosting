@@ -277,6 +277,34 @@ spec:
 {{- end }}
 
 {{/*
+Whether a worker group gets a ScaledObject of its own. Returns "true" or "".
+
+Both the Deployment and the ScaledObject have to agree on this: the Deployment
+omits `replicas` when KEDA owns the count, so if the two disagreed a group would
+end up with neither a replica count nor a scaler, and sit at zero pods forever.
+Hence one helper rather than the same condition written twice.
+
+A group with no poolName consumes the default `jobs` queue, which the chart's
+own worker ScaledObject already watches. Generating a second scaler on that same
+backlog would have both of them scale to cover all of it, roughly doubling the
+workers for one queue, so a poolless group is left on its static replicaCount
+instead. Supplying explicit `keda.triggers` overrides that, on the grounds that
+a caller naming their own triggers has decided what this group scales on.
+*/}}
+{{- define "n8n.workerGroupScaled" -}}
+{{- $ := .root -}}
+{{- $group := .group -}}
+{{- $keda := $group.keda | default dict -}}
+{{- $enabled := $.Values.keda.enabled -}}
+{{- if hasKey $keda "enabled" -}}
+{{- $enabled = $keda.enabled -}}
+{{- end -}}
+{{- if $enabled -}}
+{{- if or $group.poolName $keda.triggers -}}true{{- end -}}
+{{- end -}}
+{{- end }}
+
+{{/*
 Bull queue a worker group consumes. A group with no poolName stays on the
 default queue alongside the chart's own worker deployment.
 */}}

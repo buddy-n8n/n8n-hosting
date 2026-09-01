@@ -14,13 +14,7 @@ its own `keda.triggers` when it needs to scale on something else.
 {{- if and .Values.keda.enabled .Values.queueMode.enabled }}
 {{- range $group := .Values.queueMode.workerGroups }}
 {{- $keda := $group.keda | default dict }}
-{{- /* hasKey rather than `default true`: sprig's default treats false as empty,
-       so `default true false` is true and an opt-out would be ignored. */}}
-{{- $kedaEnabled := true }}
-{{- if hasKey $keda "enabled" }}
-{{- $kedaEnabled = $keda.enabled }}
-{{- end }}
-{{- if $kedaEnabled }}
+{{- if include "n8n.workerGroupScaled" (dict "root" $ "group" $group) }}
 {{- $queue := include "n8n.workerGroupQueueName" $group }}
 {{- $prefix := $.Values.redis.prefix | default "bull" }}
 ---
