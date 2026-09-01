@@ -137,6 +137,8 @@ queueMode:
 
 When `keda.enabled` is true a group with a `poolName` gets its own `ScaledObject` watching that group's queue, because the default worker's triggers only watch `<prefix>:jobs:*` and cannot see a pool's backlog. Set `keda.enabled: false` on a group to keep a fixed `replicaCount` instead.
 
+A group's `keda.enabled` is an opt-out only. The release-wide `keda.enabled` selects the autoscaler for the whole chart, rendering HPAs when it is off, so a group cannot switch KEDA on for itself while the release is in HPA mode; the chart rejects that combination rather than rendering a Deployment with no replica count and no scaler. With the release-wide switch off, a group's other `keda` settings are inert and the group runs at its `replicaCount`.
+
 A group with no `poolName` stays on the default `jobs` queue, which the chart's own worker `ScaledObject` already watches. A second scaler on that backlog would scale to cover the same jobs twice, so the chart does not generate one: a poolless group keeps its static `replicaCount` and the default worker's scaler absorbs the queue. If you want such a group autoscaled on something else, give it explicit `keda.triggers` and the chart will use those verbatim.
 
 Two things to know about pool names:

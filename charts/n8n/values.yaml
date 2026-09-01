@@ -76,6 +76,13 @@ queueMode:
   # generate one: a poolless group holds the static `replicaCount` below.
   # Set `keda.triggers` on the group to scale it on something else instead.
   #
+  # A group's own `keda.enabled` is an opt-out only. The release-wide
+  # keda.enabled above picks the autoscaler for the whole chart (HPAs when it is
+  # off), so a group cannot turn KEDA on for itself while the release is in HPA
+  # mode; the chart rejects that rather than render a group with neither a
+  # replica count nor a scaler. With the release-wide switch off, a group's
+  # other `keda` settings are inert and it runs at its `replicaCount`.
+  #
   # Example:
   # workerGroups:
   #   - name: gpu

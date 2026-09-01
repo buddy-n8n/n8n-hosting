@@ -290,17 +290,22 @@ backlog would have both of them scale to cover all of it, roughly doubling the
 workers for one queue, so a poolless group is left on its static replicaCount
 instead. Supplying explicit `keda.triggers` overrides that, on the grounds that
 a caller naming their own triggers has decided what this group scales on.
+
+The release-wide keda.enabled is a hard precondition, not a default a group can
+raise. It selects the autoscaler for the whole release (the chart renders HPAs
+instead when it is off) and the group ScaledObjects are gated on it at file
+level, so a group that could opt *in* would omit `replicas` for a scaler that
+never renders. A group's own keda.enabled is therefore an opt-out only;
+deployment-worker-group.yaml rejects a group that tries to opt in.
 */}}
 {{- define "n8n.workerGroupScaled" -}}
 {{- $ := .root -}}
 {{- $group := .group -}}
 {{- $keda := $group.keda | default dict -}}
-{{- $enabled := $.Values.keda.enabled -}}
-{{- if hasKey $keda "enabled" -}}
-{{- $enabled = $keda.enabled -}}
-{{- end -}}
-{{- if $enabled -}}
+{{- if $.Values.keda.enabled -}}
+{{- if not (and (hasKey $keda "enabled") (not $keda.enabled)) -}}
 {{- if or $group.poolName $keda.triggers -}}true{{- end -}}
+{{- end -}}
 {{- end -}}
 {{- end }}
 
