@@ -186,8 +186,9 @@
               },
               "poolName": {
                 "type": "string",
-                "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
-                "description": "n8n worker pool to pin this group to. Sets N8N_WORKER_POOL_NAME, moving the group onto the jobs-<poolName> queue. Lowercase letters, digits and hyphens, 1-63 characters, starting alphanumeric; n8n only warns on an invalid name and then falls back to the default queue."
+                "pattern": "^[a-z0-9]([a-z0-9-]*[a-z0-9])?$",
+                "maxLength": 63,
+                "description": "n8n worker pool to pin this group to. Sets N8N_WORKER_POOL_NAME, moving the group onto the jobs-<poolName> queue. Lowercase letters, digits and hyphens, 1-63 characters, starting and ending alphanumeric; n8n only warns on an invalid name and then falls back to the default queue. Stricter than n8n's own pattern, which permits a trailing hyphen, because the value is also emitted as the n8n.io/worker-pool label and Kubernetes rejects a label value that does not end alphanumeric."
               },
               "replicaCount": { "type": "integer", "minimum": 0 },
               "concurrency": { "type": "integer", "minimum": 1 },

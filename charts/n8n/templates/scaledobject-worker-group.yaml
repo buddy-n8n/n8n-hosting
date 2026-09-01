@@ -32,9 +32,9 @@ metadata:
   labels:
     {{- include "n8n.labels" $ | nindent 4 }}
     app.kubernetes.io/component: worker
-    n8n.io/worker-group: {{ $group.name }}
+    n8n.io/worker-group: {{ $group.name | quote }}
     {{- with $group.poolName }}
-    n8n.io/worker-pool: {{ . }}
+    n8n.io/worker-pool: {{ . | quote }}
     {{- end }}
   {{- with $.Values.commonAnnotations }}
   annotations:
@@ -43,9 +43,13 @@ metadata:
 spec:
   scaleTargetRef:
     name: {{ include "n8n.fullname" $ }}-worker-{{ $group.name }}
+  {{- /* hasKey, not `default`, wherever 0 is a legal value: sprig's default
+         treats 0 as empty, so `default 300 0` is 300 and an explicit zero
+         would be silently replaced. minReplicaCount 0 in particular is the
+         documented way to scale a pool to nothing. */}}
   pollingInterval: {{ $keda.pollingInterval | default $.Values.keda.worker.pollingInterval }}
-  cooldownPeriod: {{ $keda.cooldownPeriod | default $.Values.keda.worker.cooldownPeriod }}
-  minReplicaCount: {{ $keda.minReplicaCount | default 1 }}
+  cooldownPeriod: {{ if hasKey $keda "cooldownPeriod" }}{{ $keda.cooldownPeriod }}{{ else }}{{ $.Values.keda.worker.cooldownPeriod }}{{ end }}
+  minReplicaCount: {{ if hasKey $keda "minReplicaCount" }}{{ $keda.minReplicaCount }}{{ else }}1{{ end }}
   maxReplicaCount: {{ $keda.maxReplicaCount | default 5 }}
   triggers:
     {{- if $keda.triggers }}

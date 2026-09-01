@@ -137,6 +137,8 @@ queueMode:
 
 When `keda.enabled` is true each group gets its own `ScaledObject` watching that group's queue, because the default worker's triggers only watch `<prefix>:jobs:*` and cannot see a pool's backlog. Set `keda.enabled: false` on a group to keep a fixed `replicaCount` instead.
 
+A group with no `poolName` stays on the default `jobs` queue. Leaving KEDA on for such a group means its scaler and the default worker's scaler read the same backlog and each scales to cover all of it, so the queue ends up with roughly twice the workers you asked for. Either give the group a `poolName`, or turn KEDA off for it and pick a fixed `replicaCount`.
+
 Two things to know about pool names:
 
 - They must be 1 to 63 characters of lowercase letters, digits and hyphens, starting with a letter or digit. The chart's values schema rejects anything else, because n8n itself only logs a warning for an invalid name and then starts the worker on the default queue, which leaves a Ready pod quietly serving the wrong jobs.

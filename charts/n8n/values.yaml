@@ -70,6 +70,13 @@ queueMode:
   # watching that group's queue, because the default worker's triggers only
   # watch `<prefix>:jobs:*` and cannot see a pool's backlog.
   #
+  # A group with no `poolName` stays on the default `jobs` queue. If you also
+  # leave KEDA on for it, its scaler and the default worker's scaler both read
+  # the same backlog and each scales to cover all of it, so the queue gets
+  # roughly twice the workers you asked for. Either give the group a
+  # `poolName`, or set `keda.enabled: false` on it and pick a fixed
+  # `replicaCount`.
+  #
   # Example:
   # workerGroups:
   #   - name: gpu

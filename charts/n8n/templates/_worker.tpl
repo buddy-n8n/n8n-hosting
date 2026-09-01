@@ -25,9 +25,9 @@ metadata:
   labels:
     {{- include "n8n.podLabels" (dict "root" $ "component" "worker") | nindent 4 }}
     {{- if $isGroup }}
-    n8n.io/worker-group: {{ $group.name }}
+    n8n.io/worker-group: {{ $group.name | quote }}
     {{- with $group.poolName }}
-    n8n.io/worker-pool: {{ . }}
+    n8n.io/worker-pool: {{ . | quote }}
     {{- end }}
     {{- end }}
 spec:

@@ -12,6 +12,17 @@ deployment, so a group cannot drift from it on connection, identity, storage or
 licence configuration.
 */ -}}
 {{- if .Values.queueMode.enabled }}
+{{- /* Each group owns a Deployment and a ScaledObject named after it, so two
+       groups sharing a name silently collide: helm template renders both, and
+       whichever applies last wins. JSON Schema cannot express uniqueness on a
+       property, so it is checked here instead. */}}
+{{- $seen := dict }}
+{{- range $group := .Values.queueMode.workerGroups }}
+{{- if hasKey $seen $group.name }}
+{{- fail (printf "queueMode.workerGroups: duplicate group name %q. Each group renders its own Deployment and ScaledObject, so names must be unique." $group.name) }}
+{{- end }}
+{{- $_ := set $seen $group.name true }}
+{{- end }}
 {{- range $group := .Values.queueMode.workerGroups }}
 ---
 apiVersion: apps/v1
@@ -22,9 +33,9 @@ metadata:
   labels:
     {{- include "n8n.labels" $ | nindent 4 }}
     app.kubernetes.io/component: worker
-    n8n.io/worker-group: {{ $group.name }}
+    n8n.io/worker-group: {{ $group.name | quote }}
     {{- with $group.poolName }}
-    n8n.io/worker-pool: {{ . }}
+    n8n.io/worker-pool: {{ . | quote }}
     {{- end }}
   {{- with $.Values.commonAnnotations }}
   annotations:
@@ -41,7 +52,8 @@ spec:
   {{- $kedaEnabled = $keda.enabled }}
   {{- end }}
   {{- if not $kedaEnabled }}
-  replicas: {{ $group.replicaCount | default 1 }}
+  {{- /* hasKey again: replicaCount 0 is a legal way to park a static group. */}}
+  replicas: {{ if hasKey $group "replicaCount" }}{{ $group.replicaCount }}{{ else }}1{{ end }}
   {{- end }}
   revisionHistoryLimit: 3
   selector:
@@ -49,7 +61,7 @@ spec:
       app.kubernetes.io/name: {{ include "n8n.name" $ }}
       app.kubernetes.io/instance: {{ $.Release.Name }}
       app.kubernetes.io/component: worker
-      n8n.io/worker-group: {{ $group.name }}
+      n8n.io/worker-group: {{ $group.name | quote }}
   template:
     {{- include "n8n.workerPodTemplate" (dict "root" $ "group" $group) | nindent 4 }}
 {{- end }}
