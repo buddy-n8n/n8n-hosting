@@ -16,6 +16,12 @@ worker exactly.
 {{- $ := .root -}}
 {{- $group := .group | default dict -}}
 {{- $isGroup := ne (len $group) 0 -}}
+{{- /* Group pods must fall outside the default worker Deployment's selector.
+       That selector is {name, instance, component: worker} and cannot be
+       narrowed, because spec.selector is immutable on a Deployment that is
+       already installed. Left on `worker`, every group pod would match it, and
+       the worker HPA would average CPU over pods it does not scale. */ -}}
+{{- $component := ternary "worker-group" "worker" $isGroup -}}
 {{- $concurrency := $group.concurrency | default $.Values.queueMode.workerConcurrency -}}
 {{- $resources := $group.resources | default $.Values.resources.worker -}}
 metadata:
@@ -23,7 +29,7 @@ metadata:
   annotations:
     {{- toYaml $podAnns | nindent 4 }}
   labels:
-    {{- include "n8n.podLabels" (dict "root" $ "component" "worker") | nindent 4 }}
+    {{- include "n8n.podLabels" (dict "root" $ "component" $component) | nindent 4 }}
     {{- if $isGroup }}
     n8n.io/worker-group: {{ $group.name | quote }}
     {{- with $group.poolName }}

@@ -47,7 +47,7 @@ metadata:
   namespace: {{ $.Release.Namespace }}
   labels:
     {{- include "n8n.labels" $ | nindent 4 }}
-    app.kubernetes.io/component: worker
+    app.kubernetes.io/component: worker-group
     n8n.io/worker-group: {{ $group.name | quote }}
     {{- with $group.poolName }}
     n8n.io/worker-pool: {{ . | quote }}
@@ -65,11 +65,15 @@ spec:
   replicas: {{ if hasKey $group "replicaCount" }}{{ $group.replicaCount }}{{ else }}1{{ end }}
   {{- end }}
   revisionHistoryLimit: 3
+  {{- /* component is worker-group, not worker: the default worker Deployment
+         selects {name, instance, component: worker} and its selector is
+         immutable, so a group pod labelled `worker` would match that
+         Deployment's selector as well as this one. */}}
   selector:
     matchLabels:
       app.kubernetes.io/name: {{ include "n8n.name" $ }}
       app.kubernetes.io/instance: {{ $.Release.Name }}
-      app.kubernetes.io/component: worker
+      app.kubernetes.io/component: worker-group
       n8n.io/worker-group: {{ $group.name | quote }}
   template:
     {{- include "n8n.workerPodTemplate" (dict "root" $ "group" $group) | nindent 4 }}

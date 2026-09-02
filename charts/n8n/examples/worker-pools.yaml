@@ -19,6 +19,11 @@
 # starting with a letter or digit. The values schema enforces this because n8n
 # itself only logs a warning for a bad name and then starts the worker on the
 # default queue, which leaves a Ready pod quietly serving the wrong jobs.
+#
+# Group pods are labelled app.kubernetes.io/component: worker-group, so that
+# they stay outside the default worker Deployment's selector. Find them with
+# kubectl get pods -l n8n.io/worker-group=gpu, or -l
+# app.kubernetes.io/component=worker-group for every group at once.
 
 database:
   type: postgresdb

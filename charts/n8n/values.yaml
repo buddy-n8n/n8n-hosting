@@ -83,6 +83,22 @@ queueMode:
   # replica count nor a scaler. With the release-wide switch off, a group's
   # other `keda` settings are inert and it runs at its `replicaCount`.
   #
+  # A group's `keda` block takes `enabled`, `minReplicaCount`,
+  # `maxReplicaCount`, `pollingInterval`, `cooldownPeriod`, `jobsPerReplica`,
+  # `triggerMetadata`, `authenticationRef` (an object with a `name`, the same
+  # shape as under `keda.worker` below) and `triggers`. `pollingInterval` and
+  # `cooldownPeriod` fall back to `keda.worker.*`, because how fast the
+  # autoscaler reacts is a property of the release. The replica bounds
+  # deliberately do not: a group exists to run somewhere different from the
+  # default fleet, so inheriting the fleet's ceiling would size it against
+  # hardware it never lands on. Left unset they are 1 and 5.
+  #
+  # Group pods carry `app.kubernetes.io/component: worker-group`, not `worker`.
+  # The default worker Deployment selects on `component: worker` and a
+  # Deployment's selector is immutable, so group pods have to sit outside it;
+  # otherwise the worker HPA would average CPU over pods it does not scale.
+  # Select a group's pods with `n8n.io/worker-group: <name>`.
+  #
   # Example:
   # workerGroups:
   #   - name: gpu

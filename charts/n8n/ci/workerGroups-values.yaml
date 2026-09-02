@@ -5,6 +5,10 @@
 # with KEDA disabled that keeps a static replicaCount, and a poolless group with
 # KEDA left on, which must NOT get a scaler of its own because the default
 # worker's ScaledObject already watches the queue it shares.
+#
+# The pooled group also carries an authenticationRef, whose shape must stay the
+# object the release-level keda.worker.triggers[] uses; a regression to a bare
+# string fails the values schema and so fails this render.
 keda:
   enabled: true
 
@@ -22,6 +26,8 @@ queueMode:
         minReplicaCount: 1
         maxReplicaCount: 3
         jobsPerReplica: 5
+        authenticationRef:
+          name: ci-redis-auth
     - name: ci-static
       replicaCount: 1
       extraEnv:
